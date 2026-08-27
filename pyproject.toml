@@ -1,0 +1,46 @@
+[project]
+name = "orchestratorx"
+version = "0.1.0"
+description = "A supervisor-pattern multi-agent orchestration framework with an auditable trace"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Asadullah Shafique" }]
+keywords = ["langgraph", "multi-agent", "orchestration", "supervisor", "audit"]
+
+dependencies = [
+    "langgraph>=1.2,<2",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.115", "uvicorn>=0.30"]
+claude = ["anthropic>=0.40"]
+gemini = ["google-genai>=0.3"]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+orchestratorx = "orchestratorx.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orchestratorx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

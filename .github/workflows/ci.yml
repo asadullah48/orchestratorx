@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev,api]"
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      # No secrets are configured for this job, and that is the point: the
+      # default reasoner is a deterministic FakeLLM, so the whole suite has to
+      # pass with no API key and no network access.
+      - name: Test
+        run: pytest -q
+
+      - name: Smoke the CLI and the API import
+        run: |
+          python -m orchestratorx.cli policy
+          python -m orchestratorx.cli demo
+          python -c "import orchestratorx.api; print('api import ok')"
