@@ -221,6 +221,33 @@ A reference implementation, and the boundaries are deliberate: no auth, no persi
 the domain rules are a plausible mandate rather than a real one. All client, issuer, and
 market data is synthetic.
 
+## 🤖 Agentic AI Alignment
+
+- **Autonomy** — the supervisor decides who runs next and when to stop
+  from typed state alone (`next_hop()`), not from a prompt — routing is a
+  testable function, not a hope about what the model will do.
+- **Resilience** — a hop budget bounds the *cycle* (not just per-node
+  retries), per-run isolation keeps concurrent runs' circuit breakers from
+  leaking into each other, and a `PolicyViolationError` is never retried
+  because retrying a deterministic error just reproduces it.
+- **Adaptivity** — the escalation policy (`=== ESCALATION SEAM ===` in
+  `policy.py`) is one function you can invert without touching routing,
+  reliability, or any agent — a regulated desk halts on `high`, a research
+  desk allows more mitigation rounds, same graph either way.
+
+### Roadmap
+
+- Add a persistence layer for the trace registry (currently in-process,
+  with `write_json` as the only export seam) so runs survive a restart.
+- Extend the `FakeLLM`/Claude/Gemini backend seam to more providers, since
+  the routing/reliability guarantees are already backend-agnostic.
+
+## 🤖 Author
+
+Built by **Asadullah Shafique**.
+
+🔗 Explore my portfolio showcasing Agentic AI projects and real-world applications: [asadullahshafique-devunity.vercel.app](https://asadullahshafique-devunity.vercel.app)
+
 ## License
 
 MIT
