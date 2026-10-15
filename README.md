@@ -1,12 +1,25 @@
 # OrchestratorX
 
-**A supervisor-pattern multi-agent framework where routing is an invariant, not a prompt.**
+**A LangGraph supervisor reference implementation for financial-portfolio workflows, with model-free routing, typed state, and ordered execution traces.**
 
-Specialist agents do the work. One supervisor decides who runs next, what to do about what
-they found, and when to stop. Every hop lands in an ordered audit trace — including the
-ones that failed.
+It separates routing and escalation policy from model-generated narrative so specialist
+ordering, mitigation, retries, and failure handling can be tested independently of a model.
+RiskModeler, ComplianceChecker, and ClientAdvisor return control to the supervisor;
+Reporter is terminal.
 
-Runs offline: no API keys, no network, no accounts.
+The default demo and 41-test suite run without API keys or model-provider access.
+
+**Verify after the development install below:**
+
+```bash
+.venv/Scripts/python -m orchestratorx.cli demo
+.venv/Scripts/python -m pytest
+```
+
+**Limits / non-goals:** Reference implementation using synthetic data and illustrative
+mandate rules. No authentication, persistent trace storage, or streaming. Hop and retry
+limits do not impose a timeout on blocked calls. Inspect run errors and traces alongside
+report text; Reporter does not explicitly include specialist errors in its narrative.
 
 *[العربية](./README.ar.md) · [Specification](./SPEC.md)*
 
@@ -14,9 +27,9 @@ Runs offline: no API keys, no network, no accounts.
 
 ## The idea
 
-Most multi-agent systems put routing inside a prompt. That makes the most important
-behaviour in the system — who runs, in what order, and what happens when something goes
-wrong — untestable without a live model.
+When routing is delegated to a model through a prompt, testing who runs, in what order,
+and how failures are handled also depends on model behaviour. Explicit routing policy
+makes those decisions testable independently of the narrative model.
 
 OrchestratorX pulls routing out of the prompt and into typed state:
 
@@ -25,12 +38,12 @@ def next_hop(state, breaker=None) -> str:
     if state.get("halted"):
         return REPORTER
     for agent in REQUIRED_SPECIALISTS:
-        if agent not in state["visited"] and not breaker.is_open(agent):
+        if agent not in state["visited"] and (breaker is None or not breaker.is_open(agent)):
             return agent
     ...
 ```
 
-Because that function consults no model, this is a test that runs in CI in milliseconds:
+Because that function consults no model, its happy-path ordering can be tested offline:
 
 ```python
 def test_compliance_checker_is_never_skipped_on_the_happy_path():
@@ -99,7 +112,9 @@ flowchart TD
 | **ClientAdvisor** | Proposes mitigations. Reached only when escalation asks. Never clears a finding on its own authority. |
 | **Reporter** | Terminal node. Assembles the deliverable, or explains why it was withheld. |
 
-Specialists return **only** to the supervisor — never to each other. That is what keeps
+RiskModeler, ComplianceChecker, and ClientAdvisor return **only** to the supervisor.
+Reporter is terminal. Required-specialist ordering applies on the happy path; a halt or
+an open breaker can bypass a specialist. That is what keeps
 every routing decision in one testable function.
 
 ---
@@ -107,16 +122,17 @@ every routing decision in one testable function.
 ## Three things that make it hold together
 
 **Reducers, because the graph loops.** `supervisor → specialist → supervisor` revisits
-nodes, so any field written more than once needs `Annotated[list, operator.add]`. Without
-that, each specialist silently overwrites the previous one's findings.
+nodes. Append-only lists such as findings and visited nodes use
+`Annotated[list, operator.add]` so updates accumulate. Scalar fields use replacement
+updates; they do not all need list reducers.
 
 **A hop budget, not just a retry cap.** Retries bound one node's failures; only a budget
 bounds the *cycle*. "Route back for mitigation, then re-check" is otherwise a legal
 infinite loop that no single component is misbehaving to cause.
 
-**Per-run isolation.** The trace and circuit breaker are looked up by `run_id`, not held on
-the instance, so concurrent runs on one compiled graph cannot leak failure counts into each
-other. There is a test for exactly that.
+**Per-run isolation.** The trace and circuit breaker are looked up by `run_id`, not shared across runs. Breakers are stored on the orchestrator in a dictionary keyed by
+`run_id`. The concurrent-run test checks separate findings and run IDs; another test checks
+separate traces. Failure injection across concurrent breakers is not covered by those tests.
 
 ---
 
@@ -128,11 +144,12 @@ in one function marked `=== ESCALATION SEAM ===` in `policy.py`:
 | Worst finding | Action | Why |
 |---|---|---|
 | `critical` | **halt** | A report built on a critical breach is worse than no report — it looks authoritative. |
-| `high` | **mitigate**, once | Route to ClientAdvisor for a proposal, then re-check. Bounded so the cycle provably terminates. |
+| `high` | **mitigate**, once | Route to ClientAdvisor for a proposal, then re-evaluate escalation over retained findings. Domain checks are not rerun against a changed portfolio. |
 | `medium` or lower | **continue** | Annotate and report. |
 
-Invert it in one function without touching routing, reliability, or any agent. A regulated
-desk might halt on `high` too; a research desk might allow several mitigation rounds.
+Escalation decisions are centralized in `decide_escalation()`. Changing the number of
+mitigation rounds also requires reviewing `MAX_MITIGATION_ROUNDS`, which routing uses,
+and the hop budget. Proposed mitigations do not clear the original findings.
 
 ---
 
@@ -141,11 +158,14 @@ desk might halt on `high` too; a research desk might allow several mitigation ro
 | Failure | Behaviour |
 |---|---|
 | Transient specialist error | Retried up to `max_attempts`; the run completes and `attempts` is recorded |
-| Repeated specialist failure | Circuit opens, supervisor routes around it, the error lands in the trace |
+| Specialist exhausts retries | Error enters run state and trace; breaker failure count increases and opens at its configured threshold |
 | Illegal transition | `PolicyViolationError`, **never retried** — retrying a deterministic error reproduces it |
-| Runaway cycle | `BudgetExceededError` at `MAX_HOPS`, run ends at the Reporter |
+| Runaway cycle | Supervisor detects `MAX_HOPS` and routes to Reporter with `BudgetExceededError` recorded |
 
-A failing specialist can't hang the run, vanish from the record, or produce a clean report.
+These limits bound steps and retry attempts, not wall-clock duration. A blocked call
+still needs a timeout. Handled specialist failures remain in run state and the trace,
+but Reporter does not explicitly render those errors in its report text. Read both
+before treating a report as complete.
 
 ---
 
@@ -218,8 +238,9 @@ src/orchestratorx/
 
 A reference implementation, and the boundaries are deliberate: no auth, no persistence
 (the trace registry is in-process, with `write_json` as the export seam), no streaming, and
-the domain rules are a plausible mandate rather than a real one. All client, issuer, and
-market data is synthetic.
+the domain rules are illustrative rather than a real mandate. All client, issuer, and
+market data is synthetic. This is not evidence of a customer production deployment.
+The trace is an in-process execution record, not a durable compliance audit system.
 
 ## 🤖 Agentic AI Alignment
 
@@ -229,11 +250,10 @@ market data is synthetic.
 - **Resilience** — a hop budget bounds the *cycle* (not just per-node
   retries), per-run isolation keeps concurrent runs' circuit breakers from
   leaking into each other, and a `PolicyViolationError` is never retried
-  because retrying a deterministic error just reproduces it.
-- **Adaptivity** — the escalation policy (`=== ESCALATION SEAM ===` in
-  `policy.py`) is one function you can invert without touching routing,
-  reliability, or any agent — a regulated desk halts on `high`, a research
-  desk allows more mitigation rounds, same graph either way.
+  at the retry-policy boundary. Hop and retry limits do not time out blocked calls.
+- **Adaptivity** — escalation decisions are centralized in `decide_escalation()`
+  (`=== ESCALATION SEAM ===` in `policy.py`). Changes to mitigation rounds also
+  require reviewing the shared round limit and hop budget.
 
 ### Roadmap
 
