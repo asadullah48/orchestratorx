@@ -114,8 +114,8 @@ flowchart TD
 
 RiskModeler, ComplianceChecker, and ClientAdvisor return **only** to the supervisor.
 Reporter is terminal. Required-specialist ordering applies on the happy path; a halt or
-an open breaker can bypass a specialist. That is what keeps
-every routing decision in one testable function.
+an open breaker can bypass a specialist. The supervisor's `next_hop()` function
+centralizes routing decisions.
 
 ---
 
@@ -130,8 +130,8 @@ updates; they do not all need list reducers.
 bounds the *cycle*. "Route back for mitigation, then re-check" is otherwise a legal
 infinite loop that no single component is misbehaving to cause.
 
-**Per-run isolation.** The trace and circuit breaker are looked up by `run_id`, not shared across runs. Breakers are stored on the orchestrator in a dictionary keyed by
-`run_id`. The concurrent-run test checks separate findings and run IDs; another test checks
+**Per-run isolation.** The trace and circuit breaker are looked up by `run_id`.
+Breakers are stored on the orchestrator in a dictionary keyed by that identifier. The concurrent-run test checks separate findings and run IDs; another test checks
 separate traces. Failure injection across concurrent breakers is not covered by those tests.
 
 ---
@@ -159,7 +159,7 @@ and the hop budget. Proposed mitigations do not clear the original findings.
 |---|---|
 | Transient specialist error | Retried up to `max_attempts`; the run completes and `attempts` is recorded |
 | Specialist exhausts retries | Error enters run state and trace; breaker failure count increases and opens at its configured threshold |
-| Illegal transition | `PolicyViolationError`, **never retried** — retrying a deterministic error reproduces it |
+| Illegal supervisor transition | `PolicyViolationError` is handled by the supervisor without retry. `RetryPolicy` also does not retry this exception when received directly. |
 | Runaway cycle | Supervisor detects `MAX_HOPS` and routes to Reporter with `BudgetExceededError` recorded |
 
 These limits bound steps and retry attempts, not wall-clock duration. A blocked call
