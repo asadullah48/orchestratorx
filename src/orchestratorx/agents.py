@@ -305,6 +305,11 @@ class Reporter(BaseAgent):
         else:
             lines.append("Findings: none.")
 
+        errors = state.get("errors", [])
+        if errors:
+            lines.append(f"Errors ({len(errors)}):")
+            lines.extend(f"  - [{e['type']}] {e['agent']}: {e['message']}" for e in errors)
+
         advisor = results.get("ClientAdvisor", {}).get("payload", {})
         if advisor.get("proposals"):
             lines.append("Proposed mitigations:")

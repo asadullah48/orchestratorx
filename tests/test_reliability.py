@@ -181,6 +181,24 @@ def test_permanent_failure_is_recorded_and_the_run_still_terminates():
     assert "ComplianceChecker" in run_trace.path
 
 
+def test_failed_specialist_error_appears_in_the_report():
+    specialists = default_specialists(FakeLLM())
+    specialists["RiskModeler"] = FlakyAgent(fail_times=99)
+    orchestrator = Orchestrator(
+        specialists,
+        llm=FakeLLM(),
+        retry=RetryPolicy(max_attempts=2, backoff_seconds=0.0),
+        breaker_threshold=1,
+    )
+
+    final, _run_trace = orchestrator.run("Review", CLEAN_BOOK)
+
+    error = next(e for e in final["errors"] if e["agent"] == "RiskModeler")
+    assert "Errors (1):" in final["report"]
+    assert f"  - [{error['type']}] {error['agent']}: {error['message']}" in final["report"]
+    assert "simulated transport failure" in final["report"]
+
+
 def test_a_failing_specialist_cannot_exhaust_the_hop_budget():
     specialists = default_specialists(FakeLLM())
     specialists["RiskModeler"] = FlakyAgent(fail_times=99)
