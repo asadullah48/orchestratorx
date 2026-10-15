@@ -1,13 +1,13 @@
 # OrchestratorX
 
-**A LangGraph supervisor reference implementation for financial-portfolio workflows, with model-free routing, typed state, and ordered execution traces.**
+**A supervisor-pattern multi-agent framework where routing is a tested Python invariant, not a prompt.**
 
 It separates routing and escalation policy from model-generated narrative so specialist
 ordering, mitigation, retries, and failure handling can be tested independently of a model.
 RiskModeler, ComplianceChecker, and ClientAdvisor return control to the supervisor;
 Reporter is terminal.
 
-The default demo and 41-test suite run without API keys or model-provider access.
+The default demo and 42-test suite run without API keys or model-provider access.
 
 **Verify after the development install below:**
 
@@ -15,11 +15,6 @@ The default demo and 41-test suite run without API keys or model-provider access
 .venv/Scripts/python -m orchestratorx.cli demo
 .venv/Scripts/python -m pytest
 ```
-
-**Limits / non-goals:** Reference implementation using synthetic data and illustrative
-mandate rules. No authentication, persistent trace storage, or streaming. Hop and retry
-limits do not impose a timeout on blocked calls. Inspect run errors and traces alongside
-report text; Reporter does not explicitly include specialist errors in its narrative.
 
 *[العربية](./README.ar.md) · [Specification](./SPEC.md)*
 
@@ -131,8 +126,8 @@ bounds the *cycle*. "Route back for mitigation, then re-check" is otherwise a le
 infinite loop that no single component is misbehaving to cause.
 
 **Per-run isolation.** The trace and circuit breaker are looked up by `run_id`.
-Breakers are stored on the orchestrator in a dictionary keyed by that identifier. The concurrent-run test checks separate findings and run IDs; another test checks
-separate traces. Failure injection across concurrent breakers is not covered by those tests.
+Breakers are stored on the orchestrator in a dictionary keyed by that identifier.
+The concurrent-run tests exercise separate findings, run IDs, and traces.
 
 ---
 
@@ -162,10 +157,9 @@ and the hop budget. Proposed mitigations do not clear the original findings.
 | Illegal supervisor transition | `PolicyViolationError` is handled by the supervisor without retry. `RetryPolicy` also does not retry this exception when received directly. |
 | Runaway cycle | Supervisor detects `MAX_HOPS` and routes to Reporter with `BudgetExceededError` recorded |
 
-These limits bound steps and retry attempts, not wall-clock duration. A blocked call
-still needs a timeout. Handled specialist failures remain in run state and the trace,
-but Reporter does not explicitly render those errors in its report text. Read both
-before treating a report as complete.
+Handled specialist errors appear in run state, the ordered trace, and the report's
+`Errors (n):` section. Each report entry includes the error type, specialist name, and
+message. These entries also form part of the narrative model's input.
 
 ---
 
@@ -216,7 +210,7 @@ quality, never a failed run.
 ## Development
 
 ```bash
-.venv/Scripts/python -m pytest      # 41 tests
+.venv/Scripts/python -m pytest      # 42 tests
 .venv/Scripts/python -m ruff check .
 ```
 
@@ -234,13 +228,13 @@ src/orchestratorx/
 
 ---
 
-## Status and limits
+## Limits / non-goals
 
-A reference implementation, and the boundaries are deliberate: no auth, no persistence
-(the trace registry is in-process, with `write_json` as the export seam), no streaming, and
-the domain rules are illustrative rather than a real mandate. All client, issuer, and
-market data is synthetic. This is not evidence of a customer production deployment.
-The trace is an in-process execution record, not a durable compliance audit system.
+This is a reference implementation using synthetic client, issuer, and market data,
+with illustrative mandate rules. It has no authentication, persistent trace storage,
+or streaming. Traces remain in process and can be exported with `write_json`.
+Hop and retry limits bound execution steps and attempts; they do not impose
+wall-clock timeouts on blocked calls.
 
 ## 🤖 Agentic AI Alignment
 
@@ -250,7 +244,7 @@ The trace is an in-process execution record, not a durable compliance audit syst
 - **Resilience** — a hop budget bounds the *cycle* (not just per-node
   retries), per-run isolation keeps concurrent runs' circuit breakers from
   leaking into each other, and a `PolicyViolationError` is never retried
-  at the retry-policy boundary. Hop and retry limits do not time out blocked calls.
+  at the retry-policy boundary.
 - **Adaptivity** — escalation decisions are centralized in `decide_escalation()`
   (`=== ESCALATION SEAM ===` in `policy.py`). Changes to mitigation rounds also
   require reviewing the shared round limit and hop budget.
