@@ -24,3 +24,6 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+
+# rendered demo video
+docs/video/out/
