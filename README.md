@@ -138,11 +138,7 @@ portfolio is compliant.
 
 ## Demo walkthrough
 
-```bash
-git clone https://github.com/asadullah48/orchestratorx && cd orchestratorx
-python -m venv .venv && .venv/Scripts/pip install -e ".[dev]"
-.venv/Scripts/python -m orchestratorx.cli demo
-```
+Set up first with the Quick start above.
 
 Real output:
 
