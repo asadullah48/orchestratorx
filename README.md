@@ -67,13 +67,13 @@ Three portfolios go through the supervisor. An excerpt of the real output, runs 
 
 ```mermaid
 flowchart TD
-    CLI["orchestratorx.cli demo<br/>Orchestrator.run()"] --> STATE[("OrchestrationState<br/>visited · findings · escalation<br/>mitigation_rounds · halted")]
+    CLI["orchestratorx.cli demo calls Orchestrator.run"] --> STATE["OrchestrationState: visited, findings, escalation, mitigation_rounds, halted"]
     STATE --> B
     subgraph SUP["supervisor node"]
         direction TB
-        B["1. check_budget<br/>hops under MAX_HOPS = 12"] --> E["2. decide_escalation<br/>critical: halt · high: mitigate · else: continue"]
-        E --> R["3. next_hop<br/>the routing rule"]
-        R --> T["4. validate_transition<br/>LEGAL_TRANSITIONS"]
+        B["Check 1 - check_budget: hops under MAX_HOPS = 12"] --> E["Check 2 - decide_escalation: critical halt, high mitigate, else continue"]
+        E --> R["Check 3 - next_hop: the routing rule"]
+        R --> T["Check 4 - validate_transition: LEGAL_TRANSITIONS"]
     end
     T -->|next_agent| RM[RiskModeler]
     T -->|next_agent| CC[ComplianceChecker]
