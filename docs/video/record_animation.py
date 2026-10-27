@@ -118,10 +118,8 @@ def render_video(page, duration: float, ffmpeg: str, fps: int, sub: int) -> None
             shot = cdp.send("Page.captureScreenshot", {"format": "png", "optimizeForSpeed": True})
             encoder.stdin.write(base64.b64decode(shot["data"]))
         if f % fps == 0:
-            print(
-                f"  {f / fps:4.0f}s / {duration:.0f}s   ({time.monotonic() - started:.0f}s elapsed)",
-                flush=True,
-            )
+            elapsed = time.monotonic() - started
+            print(f"  {f / fps:4.0f}s / {duration:.0f}s   ({elapsed:.0f}s elapsed)", flush=True)
     encoder.stdin.close()
     if encoder.wait() != 0:
         sys.exit("ffmpeg failed while encoding the video")
@@ -129,7 +127,8 @@ def render_video(page, duration: float, ffmpeg: str, fps: int, sub: int) -> None
 
     subprocess.run(
         [
-            # 48 kHz stereo is the video norm; the 44.1 kHz WAV played silent in Windows Media Player.
+            # 48 kHz stereo is the video norm; the 44.1 kHz WAV played silent in
+            # Windows Media Player.
             ffmpeg,
             "-y",
             "-loglevel",
@@ -173,7 +172,8 @@ def main() -> int:
     ffmpeg = find_ffmpeg()
     if not args.beats and not ffmpeg:
         sys.exit(
-            "ffmpeg not found. Install it with:  winget install Gyan.FFmpeg  (then open a new terminal)"
+            "ffmpeg not found. Install it with:  winget install Gyan.FFmpeg  "
+            "(then open a new terminal)"
         )
 
     with sync_playwright() as pw:
