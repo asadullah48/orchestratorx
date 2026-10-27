@@ -72,14 +72,40 @@ def render_video(page, duration: float, ffmpeg: str, fps: int, sub: int) -> None
     silent = OUT / "architecture-animation-silent.mp4"
     final = OUT / "architecture-animation.mp4"
     # Frame n of the output blends subframes n*sub .. n*sub+sub-1.
-    vf = f"tmix=frames={sub},select='eq(mod(n,{sub}),{sub - 1})',setpts=N/({fps}*TB)" if sub > 1 else "null"
+    vf = (
+        f"tmix=frames={sub},select='eq(mod(n,{sub}),{sub - 1})',setpts=N/({fps}*TB)"
+        if sub > 1
+        else "null"
+    )
     encoder = subprocess.Popen(
         [
-            ffmpeg, "-y", "-loglevel", "error",
-            "-f", "image2pipe", "-framerate", str(fps * sub), "-vcodec", "png", "-i", "-",
-            "-vf", vf, "-r", str(fps),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", str(silent),
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "image2pipe",
+            "-framerate",
+            str(fps * sub),
+            "-vcodec",
+            "png",
+            "-i",
+            "-",
+            "-vf",
+            vf,
+            "-r",
+            str(fps),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(silent),
         ],
         stdin=subprocess.PIPE,
     )
@@ -92,7 +118,10 @@ def render_video(page, duration: float, ffmpeg: str, fps: int, sub: int) -> None
             shot = cdp.send("Page.captureScreenshot", {"format": "png", "optimizeForSpeed": True})
             encoder.stdin.write(base64.b64decode(shot["data"]))
         if f % fps == 0:
-            print(f"  {f / fps:4.0f}s / {duration:.0f}s   ({time.monotonic() - started:.0f}s elapsed)", flush=True)
+            print(
+                f"  {f / fps:4.0f}s / {duration:.0f}s   ({time.monotonic() - started:.0f}s elapsed)",
+                flush=True,
+            )
     encoder.stdin.close()
     if encoder.wait() != 0:
         sys.exit("ffmpeg failed while encoding the video")
@@ -101,10 +130,32 @@ def render_video(page, duration: float, ffmpeg: str, fps: int, sub: int) -> None
     subprocess.run(
         [
             # 48 kHz stereo is the video norm; the 44.1 kHz WAV played silent in Windows Media Player.
-            ffmpeg, "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav),
-            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-            "-shortest", "-movflags", "+faststart", str(final),
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(silent),
+            "-i",
+            str(wav),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            str(final),
         ],
         check=True,
     )
@@ -121,7 +172,9 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     ffmpeg = find_ffmpeg()
     if not args.beats and not ffmpeg:
-        sys.exit("ffmpeg not found. Install it with:  winget install Gyan.FFmpeg  (then open a new terminal)")
+        sys.exit(
+            "ffmpeg not found. Install it with:  winget install Gyan.FFmpeg  (then open a new terminal)"
+        )
 
     with sync_playwright() as pw:
         browser, page = open_page(pw)
