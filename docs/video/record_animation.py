@@ -100,8 +100,10 @@ def render_video(page, duration: float, ffmpeg: str, fps: int, sub: int) -> None
 
     subprocess.run(
         [
+            # 48 kHz stereo is the video norm; the 44.1 kHz WAV played silent in Windows Media Player.
             ffmpeg, "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav),
-            "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+            "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             "-shortest", "-movflags", "+faststart", str(final),
         ],
         check=True,
