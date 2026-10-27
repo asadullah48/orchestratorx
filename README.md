@@ -1,5 +1,7 @@
 # OrchestratorX
 
+[![CI](https://github.com/asadullah48/orchestratorx/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/asadullah48/orchestratorx/actions/workflows/ci.yml)
+
 **A supervisor-pattern multi-agent framework where routing is an invariant, not a prompt.**
 
 Specialist agents do the work. One supervisor decides who runs next, what to do about what
@@ -196,7 +198,7 @@ quality, never a failed run.
 ## Development
 
 ```bash
-.venv/Scripts/python -m pytest      # 41 tests
+.venv/Scripts/python -m pytest      # 41 tests passing (verified 24 Oct 2026, commit 1ca950a)
 .venv/Scripts/python -m ruff check .
 ```
 
