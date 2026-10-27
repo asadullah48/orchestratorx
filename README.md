@@ -2,19 +2,110 @@
 
 [![CI](https://github.com/asadullah48/orchestratorx/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/asadullah48/orchestratorx/actions/workflows/ci.yml)
 
-**A supervisor-pattern multi-agent framework where routing is an invariant, not a prompt.**
+Supervisor-pattern multi-agent framework — routing as typed state, not prompt text.
 
-Specialist agents do the work. One supervisor decides who runs next, what to do about what
-they found, and when to stop. Every hop lands in an ordered audit trace — including the
-ones that failed.
+## The problem
 
-Runs offline: no API keys, no network, no accounts.
+In many multi-agent systems, a model decides which agent runs next by following
+instructions in a prompt. Then the most important behaviour — who runs, in what order, and
+when to stop — can only be checked by running a live model, and a wrong route is hard to
+reproduce. OrchestratorX keeps that decision in one plain Python function, `next_hop`, that
+reads typed state, so routing is tested in CI like any other code.
+
+## Demo
+
+https://github.com/user-attachments/assets/252dedbc-52a7-4372-a93f-f0b32720854e
+
+*Animated diagram of one real demo run. A screen recording of a live run is coming.*
+
+## Quick start
+
+Runs offline: no API keys, no network, no accounts. The default reasoner is a deterministic
+`FakeLLM`. Needs Python 3.11 or newer.
+
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/asadullah48/orchestratorx
+cd orchestratorx
+python -m venv .venv
+.venv\Scripts\python -m pip install -e .
+.venv\Scripts\python -m orchestratorx.cli demo
+```
+
+**macOS / Linux**
+
+```bash
+git clone https://github.com/asadullah48/orchestratorx
+cd orchestratorx
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m orchestratorx.cli demo
+```
+
+## What you will see
+
+Three portfolios go through the supervisor. An excerpt of the real output, runs 2 and 3:
+
+```
+[2] Concentrated and over-levered
+    High findings trigger one bounded mitigation round via ClientAdvisor.
+    path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> ClientAdvisor -> supervisor -> Reporter
+    escalation : continue  |  halted: False
+    findings   : RSK-001(medium), CMP-002(high), CMP-002(high), CMP-004(high)
+    hops       : 8 (budget 12)
+
+[3] Restricted sector held
+    A critical breach halts the run; the report is withheld rather than dressed up.
+    path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> Reporter
+    escalation : halt  |  halted: True
+    findings   : CMP-003(critical)
+    hops       : 6 (budget 12)
+```
+
+## How it works
+
+```mermaid
+flowchart TD
+    CLI["orchestratorx.cli demo<br/>Orchestrator.run()"] --> STATE[("OrchestrationState<br/>visited · findings · escalation<br/>mitigation_rounds · halted")]
+    STATE --> B
+    subgraph SUP["supervisor node"]
+        direction TB
+        B["1. check_budget<br/>hops under MAX_HOPS = 12"] --> E["2. decide_escalation<br/>critical: halt · high: mitigate · else: continue"]
+        E --> R["3. next_hop<br/>the routing rule"]
+        R --> T["4. validate_transition<br/>LEGAL_TRANSITIONS"]
+    end
+    T -->|next_agent| RM[RiskModeler]
+    T -->|next_agent| CC[ComplianceChecker]
+    T -->|"escalation = mitigate"| CA[ClientAdvisor]
+    T -->|"required done or halted"| RP[Reporter]
+    B -.->|"over budget: halt"| RP
+    RM -->|"findings, results"| STATE
+    CC -->|"findings, results"| STATE
+    CA -->|"mitigation_rounds + 1"| STATE
+    RP --> OUT(["report"])
+```
+
+The routing rule, `next_hop` in [`policy.py`](./src/orchestratorx/policy.py), checks in this order:
+
+1. If `halted` is true, go to `Reporter`.
+2. Otherwise, go to the first of `RiskModeler`, `ComplianceChecker` that is not yet in `visited` (skipping one whose circuit breaker is open).
+3. Otherwise, if `escalation` is `mitigate` and `mitigation_rounds` is below `MAX_MITIGATION_ROUNDS` (1), and the `ClientAdvisor` breaker is not open, go to `ClientAdvisor`.
+4. Otherwise, go to `Reporter`.
+
+**Tests:** 41 passing (`pytest -q`, verified 27 Oct 2026).
 
 *[العربية](./README.ar.md) · [Specification](./SPEC.md)*
 
 ---
 
-## The idea
+## Why routing lives in code
+
+**A supervisor-pattern multi-agent framework where routing is an invariant, not a prompt.**
+
+Specialist agents do the work. One supervisor decides who runs next, what to do about what
+they found, and when to stop. Every hop lands in an ordered audit trace — including the
+ones that failed.
 
 Most multi-agent systems put routing inside a prompt. That makes the most important
 behaviour in the system — who runs, in what order, and what happens when something goes
@@ -45,7 +136,7 @@ portfolio is compliant.
 
 ---
 
-## Quickstart
+## Demo walkthrough
 
 ```bash
 git clone https://github.com/asadullah48/orchestratorx && cd orchestratorx
@@ -78,7 +169,7 @@ advisor at all — a critical breach halts rather than shopping for a mitigation
 
 ---
 
-## The graph
+## Graph shape (`orchestratorx graph`)
 
 ```mermaid
 flowchart TD
