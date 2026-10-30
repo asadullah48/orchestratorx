@@ -1,0 +1,5 @@
+flowchart LR
+    START -->|1: required_specialist| RiskModeler
+    RiskModeler -->|2: required_specialist| ComplianceChecker
+    ComplianceChecker -->|3: mitigate| ClientAdvisor
+    ClientAdvisor -->|4: report| Reporter

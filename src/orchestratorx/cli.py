@@ -92,7 +92,7 @@ def _print_run(index: int, title: str, blurb: str, final: OrchestrationState, tr
 
 def cmd_demo(args: argparse.Namespace) -> int:
     reasoner = get_client(args.llm)
-    orchestrator = Orchestrator(llm=reasoner)
+    orchestrator = Orchestrator(llm=reasoner, trace_routes=args.trace)
 
     print(RULE)
     print(f"OrchestratorX {__version__} - supervisor-pattern multi-agent demo")
@@ -105,6 +105,9 @@ def cmd_demo(args: argparse.Namespace) -> int:
     for index, (title, blurb, book) in enumerate(SCENARIOS, start=1):
         final, tr = orchestrator.run("Review the book against the mandate", book)
         _print_run(index, title, blurb, final, tr)
+        if args.trace:
+            json_path, mmd_path = orchestrator.route_traces[tr.run_id].write("traces")
+            print(f"    route trace: {json_path.as_posix()}, {mmd_path.as_posix()}")
         last = tr
         if args.reports:
             print("\n" + final.get("report", ""))
@@ -162,6 +165,11 @@ def build_parser() -> argparse.ArgumentParser:
         const="orchestratorx-trace.json",
         default=None,
         help="write the last run's trace to a JSON file",
+    )
+    demo.add_argument(
+        "--trace",
+        action="store_true",
+        help="write each run's route trace to traces/<run_id>.json and .mmd",
     )
     demo.set_defaults(func=cmd_demo)
 

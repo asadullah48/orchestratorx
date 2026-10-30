@@ -1,0 +1,70 @@
+{
+  "entries": [
+    {
+      "from_node": "START",
+      "observed": {
+        "breaker.is_open(RiskModeler)": false,
+        "halted": false,
+        "visited": []
+      },
+      "rule": "required_specialist",
+      "step": 1,
+      "to_node": "RiskModeler"
+    },
+    {
+      "from_node": "RiskModeler",
+      "observed": {
+        "breaker.is_open(ComplianceChecker)": false,
+        "halted": false,
+        "visited": [
+          "supervisor",
+          "RiskModeler"
+        ]
+      },
+      "rule": "required_specialist",
+      "step": 2,
+      "to_node": "ComplianceChecker"
+    },
+    {
+      "from_node": "ComplianceChecker",
+      "observed": {
+        "breaker.is_open(ClientAdvisor)": false,
+        "escalation": "mitigate",
+        "halted": false,
+        "mitigation_rounds": 0,
+        "visited": [
+          "supervisor",
+          "RiskModeler",
+          "supervisor",
+          "ComplianceChecker"
+        ]
+      },
+      "rule": "mitigate",
+      "step": 3,
+      "to_node": "ClientAdvisor"
+    },
+    {
+      "from_node": "ClientAdvisor",
+      "observed": {
+        "escalation": "continue",
+        "halted": false,
+        "visited": [
+          "supervisor",
+          "RiskModeler",
+          "supervisor",
+          "ComplianceChecker",
+          "supervisor",
+          "ClientAdvisor"
+        ]
+      },
+      "rule": "report",
+      "step": 4,
+      "to_node": "Reporter"
+    }
+  ],
+  "meta": {
+    "finished_at": "2026-10-30T16:47:07.225256+00:00",
+    "run_id": "run_eef180a9132c",
+    "started_at": "2026-10-30T16:47:07.218771+00:00"
+  }
+}

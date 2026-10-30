@@ -27,3 +27,6 @@ Thumbs.db
 
 # rendered demo video
 docs/video/out/
+
+# route traces written by `orchestratorx demo --trace`
+traces/

@@ -148,14 +148,28 @@ class CircuitBreaker:
 # --------------------------------------------------------------------------
 
 
+RULE_HALTED = "halted"
+RULE_REQUIRED_SPECIALIST = "required_specialist"
+RULE_MITIGATE = "mitigate"
+RULE_REPORT = "report"
+RULE_SUPERVISOR_ERROR = "supervisor_error"
+"""Stable ids for the return points of :func:`next_hop` (plus the supervisor's
+error path), used by the route trace."""
+
+
 def next_hop(state: OrchestrationState, breaker: CircuitBreaker | None = None) -> str:
     """Pick the next node from typed state alone.
 
     Deterministic and model-free by design: the routing invariant is only
     testable if nothing here consults an LLM.
     """
+    return _route(state, breaker)[0]
+
+
+def _route(state: OrchestrationState, breaker: CircuitBreaker | None) -> tuple[str, str]:
+    """The routing rules. Returns ``(target, rule_id)``."""
     if state.get("halted"):
-        return REPORTER
+        return REPORTER, RULE_HALTED
 
     visited = state.get("visited", [])
 
@@ -165,16 +179,45 @@ def next_hop(state: OrchestrationState, breaker: CircuitBreaker | None = None) -
             continue
         if breaker is not None and breaker.is_open(agent):
             continue
-        return agent
+        return agent, RULE_REQUIRED_SPECIALIST
 
     if (
         state.get("escalation") == Escalation.MITIGATE.value
         and state.get("mitigation_rounds", 0) < MAX_MITIGATION_ROUNDS
         and not (breaker is not None and breaker.is_open("ClientAdvisor"))
     ):
-        return "ClientAdvisor"
+        return "ClientAdvisor", RULE_MITIGATE
 
-    return REPORTER
+    return REPORTER, RULE_REPORT
+
+
+class _ReadLog:
+    """Stands in for the state and breaker, logging every value routing reads."""
+
+    def __init__(self, state: OrchestrationState, breaker: CircuitBreaker | None) -> None:
+        self._state = state
+        self._breaker = breaker
+        self.observed: dict[str, Any] = {}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        value = self._state.get(key, default)
+        self.observed[key] = list(value) if isinstance(value, list) else value
+        return value
+
+    def is_open(self, agent: str) -> bool:
+        assert self._breaker is not None
+        value = self._breaker.is_open(agent)
+        self.observed[f"breaker.is_open({agent})"] = value
+        return value
+
+
+def traced_next_hop(
+    state: OrchestrationState, breaker: CircuitBreaker | None = None
+) -> tuple[str, str, dict[str, Any]]:
+    """:func:`next_hop` plus the rule that fired and exactly the inputs it read."""
+    log = _ReadLog(state, breaker)
+    target, rule = _route(log, log if breaker is not None else None)  # type: ignore[arg-type]
+    return target, rule, log.observed
 
 
 # --------------------------------------------------------------------------
