@@ -93,7 +93,7 @@ The routing rule, `next_hop` in [`policy.py`](./src/orchestratorx/policy.py), ch
 3. Otherwise, if `escalation` is `mitigate` and `mitigation_rounds` is below `MAX_MITIGATION_ROUNDS` (1), and the `ClientAdvisor` breaker is not open, go to `ClientAdvisor`.
 4. Otherwise, go to `Reporter`.
 
-**Tests:** 60 passing (`pytest -q`, verified 30 Oct 2026, commit 28de5e0).
+**Tests:** 65 passing (`pytest -q`, verified 30 Oct 2026, code commit 8bf2d86).
 
 *[العربية](./README.ar.md) · [Specification](./SPEC.md)*
 
@@ -285,7 +285,7 @@ quality, never a failed run.
 ## Development
 
 ```bash
-.venv/Scripts/python -m pytest      # 60 tests passing (verified 30 Oct 2026, commit 28de5e0)
+.venv/Scripts/python -m pytest      # 65 tests passing (verified 30 Oct 2026, code commit 8bf2d86)
 .venv/Scripts/python -m ruff check .
 ```
 
