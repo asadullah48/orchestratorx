@@ -241,9 +241,11 @@ class Orchestrator:
         """
         state = initial_state(objective, request)
         run_trace = trace_mod.register(RunTrace(run_id=state["run_id"], objective=objective))
-        final: OrchestrationState = self.app.invoke(state)
-        if self.trace_routes:
-            self.route_trace_for(state["run_id"]).meta.finished_at = _now_iso()
+        try:
+            final: OrchestrationState = self.app.invoke(state)
+        finally:
+            if self.trace_routes:
+                self.route_trace_for(state["run_id"]).meta.finished_at = _now_iso()
         return final, run_trace
 
 

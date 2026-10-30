@@ -90,6 +90,13 @@ def _print_run(index: int, title: str, blurb: str, final: OrchestrationState, tr
     print(f"    hops       : {len(tr.events)} (budget {MAX_HOPS})")
 
 
+def _write_route_traces(orchestrator: Orchestrator) -> None:
+    while orchestrator.route_traces:
+        _, route = orchestrator.route_traces.popitem()
+        json_path, mmd_path = route.write("traces")
+        print(f"    route trace: {json_path.as_posix()}, {mmd_path.as_posix()}")
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     reasoner = get_client(args.llm)
     orchestrator = Orchestrator(llm=reasoner, trace_routes=args.trace)
@@ -103,11 +110,13 @@ def cmd_demo(args: argparse.Namespace) -> int:
 
     last: RunTrace | None = None
     for index, (title, blurb, book) in enumerate(SCENARIOS, start=1):
-        final, tr = orchestrator.run("Review the book against the mandate", book)
-        _print_run(index, title, blurb, final, tr)
-        if args.trace:
-            json_path, mmd_path = orchestrator.route_traces[tr.run_id].write("traces")
-            print(f"    route trace: {json_path.as_posix()}, {mmd_path.as_posix()}")
+        try:
+            final, tr = orchestrator.run("Review the book against the mandate", book)
+            _print_run(index, title, blurb, final, tr)
+        finally:
+            # Written even if the run raised, so a crash still leaves its route.
+            if args.trace:
+                _write_route_traces(orchestrator)
         last = tr
         if args.reports:
             print("\n" + final.get("report", ""))

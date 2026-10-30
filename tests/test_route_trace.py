@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import pytest
 
-from orchestratorx import Orchestrator
+from orchestratorx import Orchestrator, policy
+from orchestratorx import orchestrator as orchestrator_mod
+from orchestratorx.agents import default_specialists
 from orchestratorx.cli import CLEAN_BOOK, CONCENTRATED_BOOK, RESTRICTED_BOOK
+from orchestratorx.cli import main as cli_main
 from orchestratorx.llm import FakeLLM
 from orchestratorx.policy import (
     REPORTER,
@@ -145,3 +148,99 @@ def test_tracing_off_gives_the_same_result_as_tracing_on(scenario):
     final_on, _ = traced_run(book, trace_routes=True)
     assert route_off is None
     assert _comparable_state(final_off) == _comparable_state(final_on)
+
+
+# --------------------------------------------------------------------------
+# Error paths
+#
+# The supervisor turns an OrchestratorError (hop limit, illegal route) into
+# state["errors"] and routes to the Reporter; it did that before tracing
+# existed and still does. Any other exception propagates out of run().
+# --------------------------------------------------------------------------
+
+
+def assert_ends_in_supervisor_error(route) -> None:
+    last = route.entries[-1]
+    assert last.rule == "supervisor_error"
+    assert last.observed == {}
+    assert last.to_node == REPORTER
+    assert [e.step for e in route.entries] == list(range(1, len(route.entries) + 1))
+
+
+def error_types(final: dict) -> list[str]:
+    return [e["type"] for e in final["errors"]]
+
+
+def test_hop_limit_is_traced_and_the_error_is_kept(monkeypatch):
+    monkeypatch.setattr(policy, "MAX_HOPS", 3)  # test-only budget
+
+    final, route = traced_run(CLEAN_BOOK)
+    final_off, _ = traced_run(CLEAN_BOOK, trace_routes=False)
+
+    assert [e.rule for e in route.entries] == [
+        "required_specialist",
+        "required_specialist",
+        "supervisor_error",
+    ]
+    assert_ends_in_supervisor_error(route)
+    assert error_types(final) == error_types(final_off) == ["BudgetExceededError"]
+
+
+def test_illegal_route_is_traced_and_the_error_is_kept(monkeypatch):
+    # Test-only policy: the supervisor may no longer reach ComplianceChecker.
+    monkeypatch.setitem(policy.LEGAL_TRANSITIONS, SUPERVISOR, frozenset({"RiskModeler", REPORTER}))
+
+    final, route = traced_run(CLEAN_BOOK)
+    final_off, _ = traced_run(CLEAN_BOOK, trace_routes=False)
+
+    assert [e.rule for e in route.entries] == ["required_specialist", "supervisor_error"]
+    assert_ends_in_supervisor_error(route)
+    assert error_types(final) == error_types(final_off) == ["PolicyViolationError"]
+
+
+def crashing_specialists(llm):
+    specialists = default_specialists(llm)
+
+    def crash(state):
+        raise RuntimeError("synthetic crash for test")
+
+    specialists["ComplianceChecker"].run = crash
+    return specialists
+
+
+def test_tracing_does_not_swallow_an_unhandled_exception():
+    orchestrator = Orchestrator(crashing_specialists(FakeLLM()), llm=FakeLLM(), trace_routes=True)
+    with pytest.raises(RuntimeError, match="synthetic crash"):
+        orchestrator.run(OBJECTIVE, CLEAN_BOOK)
+
+    (route,) = orchestrator.route_traces.values()
+    assert [e.to_node for e in route.entries] == ["RiskModeler", "ComplianceChecker"]
+    assert route.meta.finished_at
+
+
+def trace_files(directory) -> tuple[list, list]:
+    return sorted(directory.glob("*.json")), sorted(directory.glob("*.mmd"))
+
+
+def test_demo_trace_writes_files_when_runs_end_in_an_error(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(policy, "MAX_HOPS", 3)
+
+    assert cli_main(["demo", "--trace"]) == 0
+
+    jsons, mmds = trace_files(tmp_path / "traces")
+    assert len(jsons) == len(mmds) == 3
+    for mmd in mmds:
+        assert "supervisor_error" in mmd.read_text(encoding="utf-8")
+
+
+def test_demo_trace_writes_files_when_a_run_crashes(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(orchestrator_mod, "default_specialists", crashing_specialists)
+
+    with pytest.raises(RuntimeError, match="synthetic crash"):
+        cli_main(["demo", "--trace"])
+
+    jsons, mmds = trace_files(tmp_path / "traces")
+    assert len(jsons) == len(mmds) == 1
+    assert mmds[0].read_text(encoding="utf-8").count("-->") == 2
