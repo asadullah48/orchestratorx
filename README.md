@@ -16,7 +16,9 @@ reads typed state, so routing is tested in CI like any other code.
 
 https://github.com/user-attachments/assets/252dedbc-52a7-4372-a93f-f0b32720854e
 
-*Animated diagram of one real demo run. A screen recording of a live run is coming.*
+*An animated diagram of the design, using the route, field names and values from demo run 2
+("Concentrated and over-levered"). It explains the design; it is not a recording of a run
+([docs/video](./docs/video/README.md)). A screen recording of a live run is coming.*
 
 ## Quick start
 
@@ -45,9 +47,16 @@ python3 -m venv .venv
 
 ## What you will see
 
-Three portfolios go through the supervisor. An excerpt of the real output, runs 2 and 3:
+Three portfolios go through the supervisor. The real output of the three runs:
 
 ```
+[1] Compliant book
+    Nothing to escalate; straight through to the report.
+    path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> Reporter
+    escalation : continue  |  halted: False
+    findings   : none
+    hops       : 6 (budget 12)
+
 [2] Concentrated and over-levered
     High findings trigger one bounded mitigation round via ClientAdvisor.
     path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> ClientAdvisor -> supervisor -> Reporter
@@ -93,7 +102,8 @@ The routing rule, `next_hop` in [`policy.py`](./src/orchestratorx/policy.py), ch
 3. Otherwise, if `escalation` is `mitigate` and `mitigation_rounds` is below `MAX_MITIGATION_ROUNDS` (1), and the `ClientAdvisor` breaker is not open, go to `ClientAdvisor`.
 4. Otherwise, go to `Reporter`.
 
-**Tests:** 65 passing (`pytest -q`, verified 30 Oct 2026, code commit 8bf2d86).
+**Tests:** 70 passing (`pytest -q` after a clean `pip install -e ".[dev,api]"`, verified
+9 Nov 2026, code commit 8ff9f8c). CI runs them on Python 3.11, 3.12 and 3.13.
 
 *[العربية](./README.ar.md) · [Specification](./SPEC.md)*
 
@@ -113,13 +123,18 @@ wrong — untestable without a live model.
 
 OrchestratorX pulls routing out of the prompt and into typed state:
 
+Simplified from `_route()` in [`policy.py`](./src/orchestratorx/policy.py) (rule IDs left out):
+
 ```python
 def next_hop(state, breaker=None) -> str:
     if state.get("halted"):
         return REPORTER
     for agent in REQUIRED_SPECIALISTS:
-        if agent not in state["visited"] and not breaker.is_open(agent):
-            return agent
+        if agent in state.get("visited", []):
+            continue
+        if breaker is not None and breaker.is_open(agent):
+            continue
+        return agent
     ...
 ```
 
@@ -138,26 +153,8 @@ portfolio is compliant.
 
 ## Demo walkthrough
 
-Set up first with the Quick start above.
-
-Real output:
-
-```
-[1] Compliant book
-    path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> Reporter
-    escalation : continue  |  halted: False
-    findings   : none
-
-[2] Concentrated and over-levered
-    path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> ClientAdvisor -> supervisor -> Reporter
-    escalation : continue  |  halted: False
-    findings   : RSK-001(medium), CMP-002(high), CMP-002(high), CMP-004(high)
-
-[3] Restricted sector held
-    path       : supervisor -> RiskModeler -> supervisor -> ComplianceChecker -> supervisor -> Reporter
-    escalation : halt  |  halted: True
-    findings   : CMP-003(critical)
-```
+Set up first with the Quick start above. The output of all three runs is under
+[What you will see](#what-you-will-see).
 
 Note run 2: the HIGH findings routed to `ClientAdvisor` **exactly once**, then the bounded
 counter flipped escalation back to `continue` and it terminated. Run 3 never reached the
@@ -263,8 +260,13 @@ isn't auditable, however good its logging is.
 | `orchestratorx demo` | Three portfolios through the supervisor |
 | `orchestratorx demo --reports` | Same, with full report text |
 | `orchestratorx demo --trace-out t.json` | Export the last run's trace |
+| `orchestratorx demo --trace` | Write each run's route trace (the rule that fired and the inputs it read, per hop) to `traces/<run_id>.json` and `traces/<run_id>.mmd` in the current directory |
 | `orchestratorx graph` | Print the graph as mermaid |
 | `orchestratorx policy` | Print the routing and escalation policy in force |
+
+Sample route-trace output, unedited: [`docs/samples/`](./docs/samples/) (`.json` and `.mmd`).
+How this routing compares to a plain LangGraph conditional edge:
+[`docs/typed-state-routing.md`](./docs/typed-state-routing.md).
 
 ---
 
@@ -285,7 +287,7 @@ quality, never a failed run.
 ## Development
 
 ```bash
-.venv/Scripts/python -m pytest      # 65 tests passing (verified 30 Oct 2026, code commit 8bf2d86)
+.venv/Scripts/python -m pytest      # 70 tests passing (verified 9 Nov 2026, code commit 8ff9f8c)
 .venv/Scripts/python -m ruff check .
 ```
 
@@ -296,6 +298,8 @@ src/orchestratorx/
   agents.py        RiskModeler, ComplianceChecker, ClientAdvisor, Reporter
   orchestrator.py  supervisor node + graph assembly
   trace.py         ordered audit trail
+  route_trace.py   route trace: the rule and inputs behind each supervisor decision
+  errors.py        failure taxonomy (retryable vs not)
   llm.py           FakeLLM default, optional Claude / Gemini
   api.py           FastAPI service
   cli.py           command-line entry point
@@ -306,9 +310,17 @@ src/orchestratorx/
 ## Status and limits
 
 A reference implementation, and the boundaries are deliberate: no auth, no persistence
-(the trace registry is in-process, with `write_json` as the export seam), no streaming, and
-the domain rules are a plausible mandate rather than a real one. All client, issuer, and
-market data is synthetic.
+(the trace registry is in-process; traces are written to disk only by `RunTrace.write_json`
+and `RouteTrace.write()`), no streaming, and the domain rules are a plausible mandate rather than
+a real one. All client, issuer, and market data is synthetic.
+
+**Route traces.** With `trace_routes=True`, `Orchestrator.route_traces` keeps one entry per
+run and never prunes it. Code that uses the library directly and traces many runs must pop
+entries itself (documented in `orchestrator.py`; the CLI does this). If writing a trace fails,
+the trace stays in memory, and the run's own error is still the one raised.
+
+**Not tested:** runs with real Claude or Gemini keys, the HTTP server (only its import is
+checked in CI), video rendering, and a run with the network cut off.
 
 ## 🤖 Agentic AI Alignment
 
@@ -327,7 +339,8 @@ market data is synthetic.
 ### Roadmap
 
 - Add a persistence layer for the trace registry (currently in-process,
-  with `write_json` as the only export seam) so runs survive a restart.
+  with `RunTrace.write_json` and `RouteTrace.write()` as the export seams) so runs
+  survive a restart.
 - Extend the `FakeLLM`/Claude/Gemini backend seam to more providers, since
   the routing/reliability guarantees are already backend-agnostic.
 
