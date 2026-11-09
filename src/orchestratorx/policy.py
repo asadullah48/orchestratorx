@@ -226,9 +226,8 @@ def traced_next_hop(
 # posture, and organisations differ. It is isolated here so it can be replaced
 # without touching routing, reliability, or any agent.
 #
-# Flagged in docs/NEXT-SESSION.md as needing the owner's judgement. The default
-# below is: halt on critical, one bounded mitigation round on high, annotate
-# and continue otherwise.
+# This needs the owner's judgement. The default below is: halt on critical,
+# one bounded mitigation round on high, annotate and continue otherwise.
 # --------------------------------------------------------------------------
 
 
