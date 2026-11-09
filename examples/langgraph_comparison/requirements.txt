@@ -1,0 +1,2 @@
+langgraph==1.2.11
+pytest==9.1.1
