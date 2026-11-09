@@ -291,6 +291,19 @@ def test_a_failed_trace_write_does_not_replace_the_run_error(monkeypatch, tmp_pa
     assert "could not write route trace: disk full (test)" in capsys.readouterr().err
 
 
+def test_a_non_oserror_trace_write_does_not_replace_the_run_error(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(orchestrator_mod, "default_specialists", crashing_specialists)
+
+    def broken(self, directory="traces"):
+        raise ValueError("unserialisable (test)")
+
+    monkeypatch.setattr(RouteTrace, "write", broken)
+
+    with pytest.raises(RuntimeError, match="synthetic crash"):
+        cli_main(["demo", "--trace"])
+
+
 def unwritable_route(self, directory="traces"):
     raise OSError("disk full (test)")
 
@@ -310,10 +323,14 @@ def test_a_failing_warning_does_not_replace_the_run_error(monkeypatch, tmp_path)
     monkeypatch.setattr(orchestrator_mod, "default_specialists", crashing_specialists)
     monkeypatch.setattr(RouteTrace, "write", unwritable_route)
 
-    def broken_write(text):
-        raise ValueError("stderr closed (test)")
+    class BrokenStream:
+        def write(self, text):
+            raise ValueError("stderr closed (test)")
 
-    monkeypatch.setattr(sys.stderr, "write", broken_write)
+        def flush(self):
+            raise ValueError("stderr closed (test)")
+
+    monkeypatch.setattr(sys, "stderr", BrokenStream())
 
     with pytest.raises(RuntimeError, match="synthetic crash"):
         cli_main(["demo", "--trace"])

@@ -122,7 +122,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
             if args.trace:
                 try:
                     _write_route_traces(orchestrator)
-                except OSError as write_error:
+                except Exception as write_error:
                     with contextlib.suppress(Exception):
                         print(
                             f"warning: could not write route trace: {write_error}",
