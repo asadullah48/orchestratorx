@@ -325,7 +325,7 @@ checked in CI), video rendering, and a run with the network cut off.
 ## 🤖 Agentic AI Alignment
 
 - **Autonomy** — the supervisor decides who runs next and when to stop
-  from typed state alone (`next_hop()`), not from a prompt — routing is a
+  from typed state and the run's circuit breaker (`next_hop()`), not from a prompt — routing is a
   testable function, not a hope about what the model will do.
 - **Resilience** — a hop budget bounds the *cycle* (not just per-node
   retries), per-run isolation keeps concurrent runs' circuit breakers from
