@@ -63,6 +63,9 @@ class Orchestrator:
         self.breaker_threshold = breaker_threshold
         self._breakers: dict[str, CircuitBreaker] = {}
         self.trace_routes = trace_routes
+        # One entry per traced run, keyed by run_id. Never pruned here: entries
+        # stay readable after run() returns or raises, so callers that trace
+        # many runs on one Orchestrator must pop them (the CLI does).
         self.route_traces: dict[str, RouteTrace] = {}
         self.app = self._build()
 
@@ -241,7 +244,9 @@ class Orchestrator:
         """Run one orchestration to completion.
 
         Returns the final state and its trace. The trace stays registered so
-        the API can serve it later by ``run_id``.
+        the API can serve it later by ``run_id``. With ``trace_routes``, the
+        route trace is left in ``self.route_traces[run_id]``; pop it when done,
+        or it is kept for the life of this Orchestrator.
         """
         state = initial_state(objective, request)
         run_trace = trace_mod.register(RunTrace(run_id=state["run_id"], objective=objective))
