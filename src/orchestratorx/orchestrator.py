@@ -245,6 +245,9 @@ class Orchestrator:
         """
         state = initial_state(objective, request)
         run_trace = trace_mod.register(RunTrace(run_id=state["run_id"], objective=objective))
+        if self.trace_routes:
+            # Created here so meta.started_at is the run start, not the first decision.
+            self.route_trace_for(state["run_id"])
         try:
             final: OrchestrationState = self.app.invoke(state)
         finally:

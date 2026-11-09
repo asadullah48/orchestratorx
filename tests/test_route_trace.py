@@ -21,6 +21,7 @@ from orchestratorx.policy import (
     traced_next_hop,
 )
 from orchestratorx.state import initial_state
+from orchestratorx.trace import _now_iso
 
 OBJECTIVE = "Review the book against the mandate"
 
@@ -204,6 +205,24 @@ def test_illegal_route_is_traced_and_the_error_is_kept(monkeypatch):
     assert "RiskModeler" in observed["visited"]
     assert "ComplianceChecker" not in observed["visited"]
     assert error_types(final) == error_types(final_off) == ["PolicyViolationError"]
+
+
+def test_route_trace_started_at_is_the_run_start(monkeypatch):
+    orchestrator = Orchestrator(llm=FakeLLM(), trace_routes=True)
+    seen: list[tuple[bool, str]] = []
+    real = orchestrator_mod.traced_next_hop
+
+    def spy(state, breaker=None):
+        seen.append((state["run_id"] in orchestrator.route_traces, _now_iso()))
+        return real(state, breaker)
+
+    monkeypatch.setattr(orchestrator_mod, "traced_next_hop", spy)
+    final, _ = orchestrator.run(OBJECTIVE, CLEAN_BOOK)
+
+    existed_at_first_decision, first_decision_at = seen[0]
+    assert existed_at_first_decision
+    route = orchestrator.route_traces[final["run_id"]]
+    assert route.meta.started_at <= first_decision_at
 
 
 def crashing_specialists(llm):
