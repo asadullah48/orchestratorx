@@ -5,7 +5,8 @@ This note compares two ways to write the same routing rules in LangGraph:
 - **OrchestratorX** (`src/orchestratorx/`): one supervisor node picks every hop from typed
   state, and the supervisor checks each choice before the graph follows it.
 - **A plain LangGraph version** (`examples/langgraph_comparison/plain_routing.py`): the same
-  rules sit in a conditional-edge function attached to every node, with nothing around them.
+  rules sit in a conditional-edge function attached to `START` and to each specialist, with
+  nothing around them. `Reporter` goes straight to `END`.
 
 Both run offline and both reach the same path for the "Concentrated and over-levered"
 scenario. The point is not that one is faster; it is what each version can check and record.
@@ -20,7 +21,8 @@ another run.
 Routing as typed state means the next hop is a plain function of named, typed fields.
 In OrchestratorX those fields are declared in `OrchestrationState`
 (`src/orchestratorx/state.py`): `visited`, `findings`, `escalation`, `mitigation_rounds`,
-`halted`, and others. The routing function reads only those fields and never calls a model.
+`halted`, and others. The routing function reads only those fields and the circuit breaker's
+open/closed state, and never calls a model.
 The docstring of `next_hop` in `src/orchestratorx/policy.py` says this directly:
 "Deterministic and model-free by design".
 
@@ -113,14 +115,15 @@ what happens around it.
 **Severity is decided once and stored in state.** The plain `route()` recomputes the worst
 severity from `findings` on every call. In OrchestratorX the supervisor calls
 `decide_escalation()` (the `=== ESCALATION SEAM ===` in `src/orchestratorx/policy.py`) and
-writes the result to the `escalation` and `halted` fields; `_route()` only reads those
-fields. The escalation policy can then change without touching the routing function.
+writes the result to the `escalation` and `halted` fields; `_route()` reads those fields
+and never looks at `findings` itself. The escalation policy can then change without touching the routing function.
 
 **One node routes; the others cannot.** In `Orchestrator._build()`
 (`src/orchestratorx/orchestrator.py`) only the supervisor has a conditional edge, and it
 follows `state["next_agent"]`. Every specialist has a fixed edge back to the supervisor. In
-the plain version, `route()` is attached to every node, and its target map lets any of those
-nodes go to any of the four nodes, including back to itself.
+the plain version, `route()` is attached to `START` and to each specialist (`Reporter` has a
+fixed edge to `END`), and its target map lets each of those go to any of the four nodes,
+including a specialist back to itself.
 
 **Every chosen hop is checked: `validate_transition`.** After `next_hop` picks a target, the
 supervisor calls `validate_transition(SUPERVISOR, target)`, which raises

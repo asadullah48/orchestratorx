@@ -1,7 +1,8 @@
 """The same routing rules as OrchestratorX, written as plain LangGraph.
 
-There is no supervisor node here. Each node is followed by a conditional
-edge, and the routing rules live inside that edge's function. This is the
+There is no supervisor node here. The routing function is attached as a
+conditional edge to START and to each specialist, and Reporter goes straight
+to END. The routing rules live inside that edge's function. This is the
 common way to route in LangGraph, and it is what docs/typed-state-routing.md
 compares against.
 

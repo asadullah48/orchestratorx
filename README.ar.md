@@ -1,4 +1,8 @@
+> **Note:** this file reflects an older version of the project. [README.md](./README.md) is the current one.
+
 <div dir="rtl" markdown="1">
+
+> **ملاحظة:** يعكس هذا الملف نسخة أقدم من المشروع، والنسخة الحالية هي [README.md](./README.md).
 
 # OrchestratorX — أوركستريتور إكس
 
@@ -170,7 +174,7 @@ uvicorn orchestratorx.api:app --reload
 ## التطوير
 
 ```bash
-.venv/Scripts/python -m pytest      # 41 اختبارًا
+.venv/Scripts/python -m pytest      # 70 اختبارًا (تم التحقق في 9 نوفمبر 2026)
 .venv/Scripts/python -m ruff check .
 ```
 
