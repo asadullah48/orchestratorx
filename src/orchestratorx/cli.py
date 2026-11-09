@@ -8,6 +8,7 @@ orchestratorx policy   print the routing and escalation policy in force
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from typing import Any
@@ -92,9 +93,10 @@ def _print_run(index: int, title: str, blurb: str, final: OrchestrationState, tr
 
 
 def _write_route_traces(orchestrator: Orchestrator) -> None:
-    while orchestrator.route_traces:
-        _, route = orchestrator.route_traces.popitem()
-        json_path, mmd_path = route.write("traces")
+    # Remove a trace only after it is on disk; a failed write stops here and keeps it.
+    for run_id in list(orchestrator.route_traces):
+        json_path, mmd_path = orchestrator.route_traces[run_id].write("traces")
+        del orchestrator.route_traces[run_id]
         print(f"    route trace: {json_path.as_posix()}, {mmd_path.as_posix()}")
 
 
@@ -121,7 +123,11 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 try:
                     _write_route_traces(orchestrator)
                 except OSError as write_error:
-                    print(f"warning: could not write route trace: {write_error}", file=sys.stderr)
+                    with contextlib.suppress(Exception):
+                        print(
+                            f"warning: could not write route trace: {write_error}",
+                            file=sys.stderr,
+                        )
             raise
         if args.trace:
             _write_route_traces(orchestrator)

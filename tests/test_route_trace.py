@@ -5,6 +5,8 @@ Runs use the synthetic books from the CLI demo and the offline FakeLLM.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from orchestratorx import Orchestrator, policy
@@ -21,6 +23,7 @@ from orchestratorx.policy import (
     next_hop,
     traced_next_hop,
 )
+from orchestratorx.route_trace import RouteTrace
 from orchestratorx.state import initial_state
 from orchestratorx.trace import _now_iso
 
@@ -286,3 +289,31 @@ def test_a_failed_trace_write_does_not_replace_the_run_error(monkeypatch, tmp_pa
     with pytest.raises(RuntimeError, match="synthetic crash"):
         cli_main(["demo", "--trace"])
     assert "could not write route trace: disk full (test)" in capsys.readouterr().err
+
+
+def unwritable_route(self, directory="traces"):
+    raise OSError("disk full (test)")
+
+
+def test_a_failed_trace_write_keeps_the_trace_in_memory(monkeypatch):
+    monkeypatch.setattr(RouteTrace, "write", unwritable_route)
+    orchestrator = Orchestrator(llm=FakeLLM(), trace_routes=True)
+    final, _ = orchestrator.run(OBJECTIVE, CLEAN_BOOK)
+
+    with pytest.raises(OSError, match="disk full"):
+        cli_mod._write_route_traces(orchestrator)
+    assert final["run_id"] in orchestrator.route_traces
+
+
+def test_a_failing_warning_does_not_replace_the_run_error(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(orchestrator_mod, "default_specialists", crashing_specialists)
+    monkeypatch.setattr(RouteTrace, "write", unwritable_route)
+
+    def broken_write(text):
+        raise ValueError("stderr closed (test)")
+
+    monkeypatch.setattr(sys.stderr, "write", broken_write)
+
+    with pytest.raises(RuntimeError, match="synthetic crash"):
+        cli_main(["demo", "--trace"])
