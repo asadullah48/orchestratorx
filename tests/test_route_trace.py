@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from orchestratorx import Orchestrator, policy
+from orchestratorx import cli as cli_mod
 from orchestratorx import orchestrator as orchestrator_mod
 from orchestratorx.agents import default_specialists
 from orchestratorx.cli import CLEAN_BOOK, CONCENTRATED_BOOK, RESTRICTED_BOOK
@@ -271,3 +272,17 @@ def test_demo_trace_writes_files_when_a_run_crashes(monkeypatch, tmp_path):
     jsons, mmds = trace_files(tmp_path / "traces")
     assert len(jsons) == len(mmds) == 1
     assert mmds[0].read_text(encoding="utf-8").count("-->") == 2
+
+
+def test_a_failed_trace_write_does_not_replace_the_run_error(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(orchestrator_mod, "default_specialists", crashing_specialists)
+
+    def unwritable(orchestrator):
+        raise OSError("disk full (test)")
+
+    monkeypatch.setattr(cli_mod, "_write_route_traces", unwritable)
+
+    with pytest.raises(RuntimeError, match="synthetic crash"):
+        cli_main(["demo", "--trace"])
+    assert "could not write route trace: disk full (test)" in capsys.readouterr().err

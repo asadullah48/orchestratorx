@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from typing import Any
 
 from orchestratorx import __version__
@@ -113,10 +114,17 @@ def cmd_demo(args: argparse.Namespace) -> int:
         try:
             final, tr = orchestrator.run("Review the book against the mandate", book)
             _print_run(index, title, blurb, final, tr)
-        finally:
-            # Written even if the run raised, so a crash still leaves its route.
+        except BaseException:
+            # Written even if the run raised, so a crash still leaves its route,
+            # but a failed write must not replace the run's own error.
             if args.trace:
-                _write_route_traces(orchestrator)
+                try:
+                    _write_route_traces(orchestrator)
+                except OSError as write_error:
+                    print(f"warning: could not write route trace: {write_error}", file=sys.stderr)
+            raise
+        if args.trace:
+            _write_route_traces(orchestrator)
         last = tr
         if args.reports:
             print("\n" + final.get("report", ""))
