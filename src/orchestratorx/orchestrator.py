@@ -63,6 +63,9 @@ class Orchestrator:
         self.breaker_threshold = breaker_threshold
         self._breakers: dict[str, CircuitBreaker] = {}
         self.trace_routes = trace_routes
+        # One entry per traced run, keyed by run_id. Never pruned here: entries
+        # stay readable after run() returns or raises, so callers that trace
+        # many runs on one Orchestrator must pop them (the CLI does).
         self.route_traces: dict[str, RouteTrace] = {}
         self.app = self._build()
 
@@ -93,6 +96,7 @@ class Orchestrator:
         rounds = state.get("mitigation_rounds", 0)
         visited = state.get("visited", [])
         came_from = visited[-1] if visited else "START"
+        observed: dict[str, Any] = {}
 
         try:
             check_budget(state)
@@ -110,8 +114,11 @@ class Orchestrator:
             # Budget exhaustion or an illegal route ends the run at the
             # reporter, which explains what happened rather than going silent.
             if self.trace_routes:
-                # The routing rules did not pick this hop, so nothing was observed.
-                self.route_trace_for(run_id).record(came_from, REPORTER, RULE_SUPERVISOR_ERROR, {})
+                # Empty if the error came before routing (budget); after an illegal
+                # route, these are the inputs the rules read to pick the rejected hop.
+                self.route_trace_for(run_id).record(
+                    came_from, REPORTER, RULE_SUPERVISOR_ERROR, observed
+                )
             run_trace.record(
                 SUPERVISOR,
                 duration_ms=(perf_counter() - started) * 1000,
@@ -237,10 +244,15 @@ class Orchestrator:
         """Run one orchestration to completion.
 
         Returns the final state and its trace. The trace stays registered so
-        the API can serve it later by ``run_id``.
+        the API can serve it later by ``run_id``. With ``trace_routes``, the
+        route trace is left in ``self.route_traces[run_id]``; pop it when done,
+        or it is kept for the life of this Orchestrator.
         """
         state = initial_state(objective, request)
         run_trace = trace_mod.register(RunTrace(run_id=state["run_id"], objective=objective))
+        if self.trace_routes:
+            # Created here so meta.started_at is the run start, not the first decision.
+            self.route_trace_for(state["run_id"])
         try:
             final: OrchestrationState = self.app.invoke(state)
         finally:

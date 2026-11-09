@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from orchestratorx import Orchestrator, policy
+from orchestratorx import cli as cli_mod
 from orchestratorx import orchestrator as orchestrator_mod
 from orchestratorx.agents import default_specialists
 from orchestratorx.cli import CLEAN_BOOK, CONCENTRATED_BOOK, RESTRICTED_BOOK
@@ -21,6 +22,7 @@ from orchestratorx.policy import (
     traced_next_hop,
 )
 from orchestratorx.state import initial_state
+from orchestratorx.trace import _now_iso
 
 OBJECTIVE = "Review the book against the mandate"
 
@@ -159,10 +161,10 @@ def test_tracing_off_gives_the_same_result_as_tracing_on(scenario):
 # --------------------------------------------------------------------------
 
 
-def assert_ends_in_supervisor_error(route) -> None:
+def assert_ends_in_supervisor_error(route, observed_keys: set[str]) -> None:
     last = route.entries[-1]
     assert last.rule == "supervisor_error"
-    assert last.observed == {}
+    assert set(last.observed) == observed_keys
     assert last.to_node == REPORTER
     assert [e.step for e in route.entries] == list(range(1, len(route.entries) + 1))
 
@@ -182,7 +184,8 @@ def test_hop_limit_is_traced_and_the_error_is_kept(monkeypatch):
         "required_specialist",
         "supervisor_error",
     ]
-    assert_ends_in_supervisor_error(route)
+    # The budget check fails before routing runs, so no inputs were read.
+    assert_ends_in_supervisor_error(route, set())
     assert error_types(final) == error_types(final_off) == ["BudgetExceededError"]
 
 
@@ -194,8 +197,33 @@ def test_illegal_route_is_traced_and_the_error_is_kept(monkeypatch):
     final_off, _ = traced_run(CLEAN_BOOK, trace_routes=False)
 
     assert [e.rule for e in route.entries] == ["required_specialist", "supervisor_error"]
-    assert_ends_in_supervisor_error(route)
+    # The rules ran and picked ComplianceChecker before the transition was rejected;
+    # the entry keeps what they read.
+    assert_ends_in_supervisor_error(route, {"halted", "visited", breaker("ComplianceChecker")})
+    observed = route.entries[-1].observed
+    assert observed["halted"] is False
+    assert observed[breaker("ComplianceChecker")] is False
+    assert "RiskModeler" in observed["visited"]
+    assert "ComplianceChecker" not in observed["visited"]
     assert error_types(final) == error_types(final_off) == ["PolicyViolationError"]
+
+
+def test_route_trace_started_at_is_the_run_start(monkeypatch):
+    orchestrator = Orchestrator(llm=FakeLLM(), trace_routes=True)
+    seen: list[tuple[bool, str]] = []
+    real = orchestrator_mod.traced_next_hop
+
+    def spy(state, breaker=None):
+        seen.append((state["run_id"] in orchestrator.route_traces, _now_iso()))
+        return real(state, breaker)
+
+    monkeypatch.setattr(orchestrator_mod, "traced_next_hop", spy)
+    final, _ = orchestrator.run(OBJECTIVE, CLEAN_BOOK)
+
+    existed_at_first_decision, first_decision_at = seen[0]
+    assert existed_at_first_decision
+    route = orchestrator.route_traces[final["run_id"]]
+    assert route.meta.started_at <= first_decision_at
 
 
 def crashing_specialists(llm):
@@ -244,3 +272,17 @@ def test_demo_trace_writes_files_when_a_run_crashes(monkeypatch, tmp_path):
     jsons, mmds = trace_files(tmp_path / "traces")
     assert len(jsons) == len(mmds) == 1
     assert mmds[0].read_text(encoding="utf-8").count("-->") == 2
+
+
+def test_a_failed_trace_write_does_not_replace_the_run_error(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(orchestrator_mod, "default_specialists", crashing_specialists)
+
+    def unwritable(orchestrator):
+        raise OSError("disk full (test)")
+
+    monkeypatch.setattr(cli_mod, "_write_route_traces", unwritable)
+
+    with pytest.raises(RuntimeError, match="synthetic crash"):
+        cli_main(["demo", "--trace"])
+    assert "could not write route trace: disk full (test)" in capsys.readouterr().err
