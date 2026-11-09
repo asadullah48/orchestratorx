@@ -93,6 +93,7 @@ class Orchestrator:
         rounds = state.get("mitigation_rounds", 0)
         visited = state.get("visited", [])
         came_from = visited[-1] if visited else "START"
+        observed: dict[str, Any] = {}
 
         try:
             check_budget(state)
@@ -110,8 +111,11 @@ class Orchestrator:
             # Budget exhaustion or an illegal route ends the run at the
             # reporter, which explains what happened rather than going silent.
             if self.trace_routes:
-                # The routing rules did not pick this hop, so nothing was observed.
-                self.route_trace_for(run_id).record(came_from, REPORTER, RULE_SUPERVISOR_ERROR, {})
+                # Empty if the error came before routing (budget); after an illegal
+                # route, these are the inputs the rules read to pick the rejected hop.
+                self.route_trace_for(run_id).record(
+                    came_from, REPORTER, RULE_SUPERVISOR_ERROR, observed
+                )
             run_trace.record(
                 SUPERVISOR,
                 duration_ms=(perf_counter() - started) * 1000,

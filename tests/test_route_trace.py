@@ -159,10 +159,10 @@ def test_tracing_off_gives_the_same_result_as_tracing_on(scenario):
 # --------------------------------------------------------------------------
 
 
-def assert_ends_in_supervisor_error(route) -> None:
+def assert_ends_in_supervisor_error(route, observed_keys: set[str]) -> None:
     last = route.entries[-1]
     assert last.rule == "supervisor_error"
-    assert last.observed == {}
+    assert set(last.observed) == observed_keys
     assert last.to_node == REPORTER
     assert [e.step for e in route.entries] == list(range(1, len(route.entries) + 1))
 
@@ -182,7 +182,8 @@ def test_hop_limit_is_traced_and_the_error_is_kept(monkeypatch):
         "required_specialist",
         "supervisor_error",
     ]
-    assert_ends_in_supervisor_error(route)
+    # The budget check fails before routing runs, so no inputs were read.
+    assert_ends_in_supervisor_error(route, set())
     assert error_types(final) == error_types(final_off) == ["BudgetExceededError"]
 
 
@@ -194,7 +195,14 @@ def test_illegal_route_is_traced_and_the_error_is_kept(monkeypatch):
     final_off, _ = traced_run(CLEAN_BOOK, trace_routes=False)
 
     assert [e.rule for e in route.entries] == ["required_specialist", "supervisor_error"]
-    assert_ends_in_supervisor_error(route)
+    # The rules ran and picked ComplianceChecker before the transition was rejected;
+    # the entry keeps what they read.
+    assert_ends_in_supervisor_error(route, {"halted", "visited", breaker("ComplianceChecker")})
+    observed = route.entries[-1].observed
+    assert observed["halted"] is False
+    assert observed[breaker("ComplianceChecker")] is False
+    assert "RiskModeler" in observed["visited"]
+    assert "ComplianceChecker" not in observed["visited"]
     assert error_types(final) == error_types(final_off) == ["PolicyViolationError"]
 
 
